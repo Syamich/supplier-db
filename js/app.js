@@ -27,6 +27,7 @@ const deletingSupplierIds = new Set()
 let currentModalSupplier = null
 let isSupplierModalEditing = false
 let isSupplierModalSaving = false
+const PREFETCH_DETAILS_LIMIT = 24
 const PAGE_SIZE = 100
 let findCurrentPage = 1
 let lkCurrentPage = 1
@@ -464,6 +465,7 @@ function renderList(container, titleNode, list, emptyText, mode) {
 
   container.appendChild(table)
   bindSupplierRowOpenDetails(container, pagedList)
+  scheduleSuppliersDetailsPrefetch(pagedList)
   renderPagination(container, totalPages, currentPage, mode)
 }
 
@@ -863,7 +865,10 @@ async function openSupplierDetailsModal(supplier) {
 
   if (!needsDetailsLoad) return
   const fullSupplier = await fetchSupplierDetailsById(supplier.id)
-  if (!fullSupplier) return
+  if (!fullSupplier) {
+    modalBody.innerHTML = buildSupplierDetailsHtml(supplier, false)
+    return
+  }
   if (!supplierDetailsOverlay || supplierDetailsOverlay.classList.contains("hidden")) return
 
   const openedSupplierId = supplierDetailsOverlay.getAttribute("data-supplier-id")
@@ -1231,7 +1236,8 @@ function buildSupplierDetailsHtml(supplier, isLoadingExtended) {
   `
 }
 
-async function fetchSupplierDetailsById(supplierId) {
+async function fetchSupplierDetailsById(supplierId, options = {}) {
+  const { silent = false } = options
   const id = String(supplierId || "")
   if (!id) return null
   if (supplierDetailsCache.has(id)) return supplierDetailsCache.get(id)
@@ -1244,7 +1250,7 @@ async function fetchSupplierDetailsById(supplierId) {
     .maybeSingle()
     .then(({ data, error }) => {
       if (error || !data) {
-        console.error("Ошибка загрузки деталей поставщика:", error)
+        if (!silent) console.error("Ошибка загрузки деталей поставщика:", error)
         return null
       }
 
@@ -1259,6 +1265,28 @@ async function fetchSupplierDetailsById(supplierId) {
 
   supplierDetailsRequests.set(id, request)
   return request
+}
+
+function scheduleSuppliersDetailsPrefetch(list) {
+  if (!Array.isArray(list) || !list.length) return
+  const targetIds = list
+    .map((supplier) => String(supplier?.id || ""))
+    .filter(Boolean)
+    .filter((id) => !supplierDetailsCache.has(id) && !supplierDetailsRequests.has(id))
+    .slice(0, PREFETCH_DETAILS_LIMIT)
+
+  if (!targetIds.length) return
+  const runPrefetch = () => {
+    targetIds.forEach((id) => {
+      void fetchSupplierDetailsById(id, { silent: true })
+    })
+  }
+
+  if (typeof requestIdleCallback === "function") {
+    requestIdleCallback(runPrefetch, { timeout: 1200 })
+    return
+  }
+  setTimeout(runPrefetch, 180)
 }
 
 function renderDetailRow(label, value) {
