@@ -412,6 +412,10 @@ body.modal-open {
   background-color: #fafcff;
 }
 
+.supplier-table__row--deleting {
+  opacity: 0.6;
+}
+
 .supplier-table__row:not(:last-child) {
   border-bottom: 1px solid #ededed;
 }

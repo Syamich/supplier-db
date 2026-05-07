@@ -22,10 +22,12 @@ let appAlertMode = "alert"
 let isInnAutofillLoading = false
 const supplierDetailsCache = new Map()
 const supplierDetailsRequests = new Map()
+const deletingSupplierIds = new Set()
 const PAGE_SIZE = 100
 let findCurrentPage = 1
 let lkCurrentPage = 1
 let isSuppliersRefreshing = false
+const WHITELIST_CACHE_TTL_MS = 5 * 60 * 1000
 
 const pageArea = document.querySelector(".page-area")
 const popupElement = document.getElementById("popup")
@@ -76,10 +78,28 @@ window.addEventListener("load", async () => {
     }
 
     currentUser = user
+    const optimisticAccess = getCachedWhitelistAccess(currentUser.id)
+    if (optimisticAccess === true) {
+      hidePopup()
+      applySuppliersFromCache()
+      const [hasAccess] = await Promise.all([checkWhitelistAccess(), refreshSuppliers()])
+      setCachedWhitelistAccess(currentUser.id, hasAccess)
+      if (hasAccess) return
+
+      await client.auth.signOut()
+      clearSuppliersView()
+      showPopup()
+      await showAppAlert("Нет доступа: ваша почта не в whitelist", { type: "error" })
+      setSuppliersRefreshing(false)
+      return
+    }
+
     const hasAccess = await checkWhitelistAccess()
+    setCachedWhitelistAccess(currentUser.id, hasAccess)
 
     if (!hasAccess) {
       await client.auth.signOut()
+      clearSuppliersView()
       showPopup()
       await showAppAlert("Нет доступа: ваша почта не в whitelist", { type: "error" })
       setSuppliersRefreshing(false)
@@ -235,8 +255,10 @@ async function handleAuth() {
       currentUser = user
 
       const hasAccess = await checkWhitelistAccess()
+      setCachedWhitelistAccess(currentUser.id, hasAccess)
       if (!hasAccess) {
         await client.auth.signOut()
+        clearSuppliersView()
         showPopup()
         await showAppAlert("Нет доступа: ваша почта не в whitelist", { type: "error" })
         return
@@ -374,6 +396,7 @@ function renderList(container, titleNode, list, emptyText, mode) {
   table.appendChild(header)
 
   pagedList.forEach((supplier) => {
+    const isDeleting = deletingSupplierIds.has(String(supplier.id))
     const name = supplier.name || "Без названия"
     const inn = supplier.inn || "-"
     const comment = supplier.comment || "-"
@@ -386,6 +409,7 @@ function renderList(container, titleNode, list, emptyText, mode) {
 
     const row = document.createElement("div")
     row.className = "supplier-table__row"
+    if (isDeleting) row.classList.add("supplier-table__row--deleting")
     row.setAttribute("data-supplier-id", String(supplier.id))
     row.innerHTML = `
       <div class="supplier-table__cell"><b>${escapeHtml(name)}</b></div>
@@ -399,7 +423,7 @@ function renderList(container, titleNode, list, emptyText, mode) {
       ${
         canDelete
           ? `<div class="supplier-table__cell supplier-table__cell--delete">
-        <button class="supplier-delete-btn" data-supplier-id="${escapeHtml(supplier.id)}" title="Удалить">✕</button>
+        <button class="supplier-delete-btn" data-supplier-id="${escapeHtml(supplier.id)}" title="Удалить" ${isDeleting ? "disabled" : ""}>${isDeleting ? "..." : "✕"}</button>
       </div>`
           : ""
       }
@@ -723,6 +747,7 @@ function bindDeleteButtons(container) {
       this.closest(".supplier-table__row")?.classList.add("supplier-table__row--no-open")
       const supplierId = this.getAttribute("data-supplier-id")
       if (!supplierId) return
+      if (deletingSupplierIds.has(String(supplierId))) return
 
       const userConfirmed = await showAppConfirm("Удалить поставщика?")
       if (!userConfirmed) return
@@ -733,12 +758,24 @@ function bindDeleteButtons(container) {
         return
       }
 
+      deletingSupplierIds.add(String(supplierId))
+      const prevSuppliers = allSuppliers
+      allSuppliers = allSuppliers.filter((item) => String(item.id) !== String(supplierId))
+      renderSuppliers()
+      setSuppliersRefreshing(true)
+
       const { error } = await client.from("suppliers").delete().eq("id", supplierId)
       if (error) {
+        allSuppliers = prevSuppliers
+        deletingSupplierIds.delete(String(supplierId))
+        renderSuppliers()
+        setSuppliersRefreshing(false)
         await showAppAlert(`Ошибка удаления: ${error.message}`, { type: "error" })
         return
       }
 
+      deletingSupplierIds.delete(String(supplierId))
+      await showAppAlert("Поставщик удален", { type: "success" })
       await refreshSuppliers()
     })
   })
@@ -964,6 +1001,38 @@ function getSuppliersCacheTsKey() {
   return `suppliers_cache_ts_${userId}`
 }
 
+function getWhitelistAccessCacheKey(userId) {
+  return `whitelist_access_cache_${userId}`
+}
+
+function getWhitelistAccessCacheTsKey(userId) {
+  return `whitelist_access_cache_ts_${userId}`
+}
+
+function setCachedWhitelistAccess(userId, value) {
+  if (!userId) return
+  try {
+    localStorage.setItem(getWhitelistAccessCacheKey(userId), value ? "1" : "0")
+    localStorage.setItem(getWhitelistAccessCacheTsKey(userId), String(Date.now()))
+  } catch (e) {
+    console.warn("Не удалось сохранить кэш whitelist:", e)
+  }
+}
+
+function getCachedWhitelistAccess(userId) {
+  if (!userId) return null
+  try {
+    const value = localStorage.getItem(getWhitelistAccessCacheKey(userId))
+    const ts = Number(localStorage.getItem(getWhitelistAccessCacheTsKey(userId)) || "0")
+    if (!value || !ts) return null
+    if (Date.now() - ts > WHITELIST_CACHE_TTL_MS) return null
+    return value === "1"
+  } catch (e) {
+    console.warn("Не удалось прочитать кэш whitelist:", e)
+    return null
+  }
+}
+
 function cacheSuppliers(suppliers) {
   try {
     const listOnly = toSuppliersListShape(suppliers)
@@ -986,6 +1055,18 @@ function applySuppliersFromCache() {
   } catch (e) {
     console.warn("Не удалось прочитать кэш suppliers:", e)
   }
+}
+
+function clearSuppliersView() {
+  allSuppliers = []
+  deletingSupplierIds.clear()
+  try {
+    localStorage.removeItem(getSuppliersCacheKey())
+    localStorage.removeItem(getSuppliersCacheTsKey())
+  } catch (e) {
+    console.warn("Не удалось очистить кэш suppliers:", e)
+  }
+  renderSuppliers()
 }
 
 function toSuppliersListShape(suppliers) {
