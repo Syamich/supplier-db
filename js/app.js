@@ -113,7 +113,8 @@ window.addEventListener("load", async () => {
 
     hidePopup()
     applySuppliersFromCache()
-    await refreshSuppliers()
+    await refreshSuppliers({ forceFresh: true })
+    void refreshSuppliers({ forceFresh: true, silent: true })
   } catch (err) {
     console.error("Auth check error:", err)
     showPopup()
@@ -274,7 +275,7 @@ async function handleAuth() {
       }
 
       hidePopup()
-      await refreshSuppliers()
+      await refreshSuppliers({ forceFresh: true })
       return
     }
 
@@ -335,25 +336,56 @@ async function checkWhitelistAccess() {
   return Boolean(data)
 }
 
-async function refreshSuppliers() {
-  setSuppliersRefreshing(true)
-  const { data, error } = await client
+async function refreshSuppliers(options = {}) {
+  const { forceFresh = false, silent = false } = options
+  if (!silent) setSuppliersRefreshing(true)
+
+  const edgeResult = await fetchSuppliersFromEdge(forceFresh)
+  const { data, error } = edgeResult || (await client
     .from("suppliers")
     .select(SUPPLIERS_LIST_FIELDS)
-    .order("created_at", { ascending: false })
+    .order("created_at", { ascending: false }))
 
   if (error) {
     console.error("Ошибка загрузки suppliers:", error)
     if (!allSuppliers.length) allSuppliers = []
     renderSuppliers()
-    setSuppliersRefreshing(false)
+    if (!silent) setSuppliersRefreshing(false)
     return
   }
 
   allSuppliers = toSuppliersListShape(Array.isArray(data) ? data : [])
   cacheSuppliers(allSuppliers)
   renderSuppliers()
-  setSuppliersRefreshing(false)
+  if (!silent) setSuppliersRefreshing(false)
+}
+
+async function fetchSuppliersFromEdge(forceFresh) {
+  try {
+    const {
+      data: { session }
+    } = await client.auth.getSession()
+    const accessToken = session?.access_token
+    if (!accessToken) return null
+
+    const freshSuffix = forceFresh ? "?fresh=1" : ""
+    const response = await fetch(`${SUPABASE_URL}/functions/v1/suppliers-list${freshSuffix}`, {
+      method: "GET",
+      headers: {
+        apikey: SUPABASE_ANON_KEY,
+        Authorization: `Bearer ${accessToken}`
+      }
+    })
+
+    const payload = await response.json().catch(() => ({}))
+    if (!response.ok) {
+      return { data: null, error: new Error(payload?.error || `HTTP ${response.status}`) }
+    }
+    return { data: Array.isArray(payload?.data) ? payload.data : [], error: null }
+  } catch (error) {
+    console.warn("Не удалось получить suppliers через Edge Function:", error)
+    return null
+  }
 }
 
 function renderSuppliers() {
@@ -784,7 +816,7 @@ function bindDeleteButtons(container) {
 
       deletingSupplierIds.delete(String(supplierId))
       await showAppAlert("Поставщик удален", { type: "success" })
-      await refreshSuppliers()
+      await refreshSuppliers({ forceFresh: true })
     })
   })
 }
@@ -1079,7 +1111,7 @@ async function deleteSupplierFromModal() {
   supplierDetailsCache.delete(supplierId)
   closeSupplierDetailsModal()
   await showAppAlert("Поставщик удален", { type: "success" })
-  await refreshSuppliers()
+  await refreshSuppliers({ forceFresh: true })
 }
 
 function closeSupplierDetailsModal() {
