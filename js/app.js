@@ -24,6 +24,9 @@ let isFindExportLoading = false
 const supplierDetailsCache = new Map()
 const supplierDetailsRequests = new Map()
 const deletingSupplierIds = new Set()
+let currentModalSupplier = null
+let isSupplierModalEditing = false
+let isSupplierModalSaving = false
 const PAGE_SIZE = 100
 let findCurrentPage = 1
 let lkCurrentPage = 1
@@ -371,7 +374,6 @@ function renderSuppliers() {
 function renderList(container, titleNode, list, emptyText, mode) {
   if (!container || !titleNode) return
   container.innerHTML = ""
-  const canDelete = mode === "lk"
   if (!list.length) {
     titleNode.textContent = emptyText
     return
@@ -392,18 +394,16 @@ function renderList(container, titleNode, list, emptyText, mode) {
   header.innerHTML = `
     <div class="supplier-table__cell">Название</div>
     <div class="supplier-table__cell">ИНН</div>
-    <div class="supplier-table__cell">СМСП</div>
     <div class="supplier-table__cell">Телефоны</div>
     <div class="supplier-table__cell">Почты</div>
+    <div class="supplier-table__cell">СМСП</div>
     <div class="supplier-table__cell">Осн. ОКВЭД2</div>
     <div class="supplier-table__cell">Регион</div>
     <div class="supplier-table__cell">Комментарий</div>
-    ${canDelete ? '<div class="supplier-table__cell supplier-table__cell--delete"></div>' : ""}
   `
   table.appendChild(header)
 
   pagedList.forEach((supplier) => {
-    const isDeleting = deletingSupplierIds.has(String(supplier.id))
     const name = supplier.name || "Без названия"
     const inn = supplier.inn || "-"
     const comment = supplier.comment || "-"
@@ -416,31 +416,22 @@ function renderList(container, titleNode, list, emptyText, mode) {
 
     const row = document.createElement("div")
     row.className = "supplier-table__row"
-    if (isDeleting) row.classList.add("supplier-table__row--deleting")
     row.setAttribute("data-supplier-id", String(supplier.id))
     row.innerHTML = `
       <div class="supplier-table__cell"><b>${escapeHtml(name)}</b></div>
       <div class="supplier-table__cell">${escapeHtml(inn)}</div>
-      <div class="supplier-table__cell">${escapeHtml(smsp)}</div>
       <div class="supplier-table__cell">${escapeHtml(companyNumbers)}</div>
       <div class="supplier-table__cell">${escapeHtml(companyMails)}</div>
+      <div class="supplier-table__cell">${escapeHtml(smsp)}</div>
       <div class="supplier-table__cell">${escapeHtml(okvedMain)}</div>
       <div class="supplier-table__cell">${escapeHtml(regions)}</div>
       <div class="supplier-table__cell">${escapeHtml(comment)}</div>
-      ${
-        canDelete
-          ? `<div class="supplier-table__cell supplier-table__cell--delete">
-        <button class="supplier-delete-btn" data-supplier-id="${escapeHtml(supplier.id)}" title="Удалить" ${isDeleting ? "disabled" : ""}>${isDeleting ? "..." : "✕"}</button>
-      </div>`
-          : ""
-      }
     `
     table.appendChild(row)
   })
 
   container.appendChild(table)
   bindSupplierRowOpenDetails(container, pagedList)
-  if (canDelete) bindDeleteButtons(container)
   renderPagination(container, totalPages, currentPage, mode)
 }
 
@@ -561,6 +552,13 @@ function addManagerInputs() {
   mailInput.setAttribute("placeholder", "Почта...")
   mailInput.setAttribute("name", "manager_mail")
 
+  const regionInput = document.createElement("input")
+  regionInput.classList.add("add-form-input", "manager-input")
+  regionInput.setAttribute("data-manager-number", managers)
+  regionInput.setAttribute("type", "text")
+  regionInput.setAttribute("placeholder", "Регион...")
+  regionInput.setAttribute("name", "manager_region")
+
   const removeInputsBtn = document.createElement("span")
   removeInputsBtn.innerHTML =
     '<svg xmlns="http://www.w3.org/2000/svg" version="1.0" viewBox="0 0 100 100"><path d="M11.4 7.4c-.3.8 5.5 10.5 13.2 22L38.3 50 24.6 70.6c-7.7 11.5-13.5 21.2-13.2 22 .4 1 2.7 1.4 8.9 1.4 9.9 0 8.6 1.1 20.8-16.7C45.7 70.5 49.7 65 50 65s3.2 3.9 6.5 8.7S64.4 85 66.7 88.2L71 94h8.5c6.4 0 8.7-.4 9.1-1.4.3-.8-5.5-10.5-13.2-22L61.7 50l13.7-20.6c7.7-11.5 13.5-21.2 13.2-22-.4-1-2.7-1.4-9.1-1.4H71l-4.3 5.8c-2.3 3.2-6.9 9.7-10.2 14.5S50.3 35 50 35s-4.3-5.5-8.9-12.3C28.9 4.9 30.2 6 20.3 6c-6.2 0-8.5.4-8.9 1.4M39 24.5c5.5 8 10.5 14.5 11 14.5s5.5-6.5 11-14.5L71.2 10H85L72 29.5C64.9 40.2 59 49.4 59 50s5.9 9.8 13 20.5L85 90H71.2L61 75.5C55.5 67.5 50.5 61 50 61s-5.5 6.5-11 14.5L28.8 90H15l13-19.5C35.1 59.8 41 50.6 41 50s-5.9-9.8-13-20.5L15 10h13.8z" fill="#3d3d3d"/></svg>'
@@ -575,6 +573,7 @@ function addManagerInputs() {
   inputBox.appendChild(nameInput)
   inputBox.appendChild(phoneInput)
   inputBox.appendChild(mailInput)
+  inputBox.appendChild(regionInput)
   inputBox.appendChild(removeInputsBtn)
   inputBox.appendChild(line)
 
@@ -583,6 +582,7 @@ function addManagerInputs() {
     inputBox.removeChild(nameInput)
     inputBox.removeChild(phoneInput)
     inputBox.removeChild(mailInput)
+    inputBox.removeChild(regionInput)
     inputBox.removeChild(removeInputsBtn)
     inputBox.removeChild(line)
   })
@@ -621,10 +621,11 @@ function collectFormData() {
 
     if (input.classList.contains("manager-input")) {
       const index = input.dataset.managerNumber
-      if (!managerGroups[index]) managerGroups[index] = { name: "", phone: "", mail: "" }
+      if (!managerGroups[index]) managerGroups[index] = { name: "", phone: "", mail: "", region: "" }
       if (key === "manager_name") managerGroups[index].name = value
       if (key === "manager_phone") managerGroups[index].phone = value
       if (key === "manager_mail") managerGroups[index].mail = value
+      if (key === "manager_region") managerGroups[index].region = value
       return
     }
 
@@ -660,7 +661,7 @@ function collectFormData() {
   })
 
   supplierFormData.managers = Object.values(managerGroups).filter(
-    (manager) => manager.name || manager.phone || manager.mail
+    (manager) => manager.name || manager.phone || manager.mail || manager.region
   )
 }
 
@@ -813,10 +814,13 @@ async function openSupplierDetailsModal(supplier) {
   const title = supplierDetailsOverlay.querySelector(".supplier-details-modal__title")
   if (!modalBody || !title) return
 
+  currentModalSupplier = supplier
+  isSupplierModalEditing = false
   title.textContent = supplier.name || "Детали поставщика"
   const needsDetailsLoad = !hasFullSupplierDetails(supplier)
   supplierDetailsOverlay.setAttribute("data-supplier-id", String(supplier.id || ""))
   modalBody.innerHTML = buildSupplierDetailsHtml(supplier, needsDetailsLoad)
+  renderSupplierModalActions(supplier)
 
   isSupplierModalClosing = false
   supplierDetailsOverlay.classList.remove("hidden")
@@ -832,8 +836,250 @@ async function openSupplierDetailsModal(supplier) {
 
   const openedSupplierId = supplierDetailsOverlay.getAttribute("data-supplier-id")
   if (String(openedSupplierId) !== String(supplier.id)) return
+  currentModalSupplier = fullSupplier
+  title.textContent = fullSupplier.name || "Детали поставщика"
   modalBody.innerHTML = buildSupplierDetailsHtml(fullSupplier, false)
+  renderSupplierModalActions(fullSupplier)
 
+}
+
+function renderSupplierModalActions(supplier) {
+  if (!supplierDetailsOverlay) return
+  const actions = supplierDetailsOverlay.querySelector(".supplier-details-modal__actions")
+  if (!actions) return
+
+  const canManage = supplier?.created_by && supplier.created_by === currentUser?.id
+  if (!canManage) {
+    actions.innerHTML = ""
+    return
+  }
+
+  if (isSupplierModalEditing) {
+    actions.innerHTML = `
+      <button class="supplier-modal-btn supplier-modal-btn--ghost" data-action="cancel-edit">Отмена</button>
+      <button class="supplier-modal-btn main-btn-style" data-action="save-edit" ${isSupplierModalSaving ? "disabled" : ""}>${isSupplierModalSaving ? "Сохранение..." : "Сохранить"}</button>
+    `
+  } else {
+    actions.innerHTML = `
+      <button class="supplier-modal-btn supplier-modal-btn--danger" data-action="delete-supplier" ${deletingSupplierIds.has(String(supplier.id)) ? "disabled" : ""}>${deletingSupplierIds.has(String(supplier.id)) ? "Удаление..." : "Удалить"}</button>
+      <button class="supplier-modal-btn main-btn-style" data-action="edit-supplier">Редактировать</button>
+    `
+  }
+}
+
+function parseCommaList(value) {
+  return String(value || "")
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean)
+}
+
+function buildManagersEditRows(managers) {
+  const list = toArray(managers).filter(Boolean)
+  const normalized = list.length
+    ? list.map((manager) => {
+        if (typeof manager === "object" && manager !== null) {
+          return {
+            name: manager.name || "",
+            phone: manager.phone || "",
+            mail: manager.mail || "",
+            region: manager.region || ""
+          }
+        }
+        return { name: String(manager), phone: "", mail: "", region: "" }
+      })
+    : [{ name: "", phone: "", mail: "", region: "" }]
+
+  return normalized
+    .map(
+      (manager, index) => `
+      <div class="supplier-edit-managers-row" data-manager-index="${index}">
+        <input class="supplier-edit-input" type="text" data-manager-field="name" data-manager-index="${index}" value="${escapeHtml(manager.name)}" placeholder="Имя">
+        <input class="supplier-edit-input" type="text" data-manager-field="phone" data-manager-index="${index}" value="${escapeHtml(manager.phone)}" placeholder="Телефон">
+        <input class="supplier-edit-input" type="text" data-manager-field="mail" data-manager-index="${index}" value="${escapeHtml(manager.mail)}" placeholder="Email">
+        <input class="supplier-edit-input" type="text" data-manager-field="region" data-manager-index="${index}" value="${escapeHtml(manager.region)}" placeholder="Регион">
+      </div>
+    `
+    )
+    .join("")
+}
+
+function buildSupplierDetailsEditHtml(supplier) {
+  return `
+    ${renderDetailInputRow("Название", "name", supplier.name)}
+    ${renderDetailInputRow("ИНН", "inn", supplier.inn)}
+    ${renderDetailInputRow("СМСП (+/-)", "is_smsp", supplier.is_smsp === true ? "+" : supplier.is_smsp === false ? "-" : "")}
+    ${renderDetailInputRow("Телефоны (через запятую)", "company_number", toArray(supplier.company_number).join(", "))}
+    ${renderDetailInputRow("Почты (через запятую)", "company_mail", toArray(supplier.company_mail).join(", "))}
+    ${renderDetailInputRow("Основной ОКВЭД2", "okved_main", toArray(supplier.okved_main).join(", "))}
+    ${renderDetailInputRow("Доп. ОКВЭД2", "okved_other", toArray(supplier.okved_other).join(", "))}
+    ${renderDetailInputRow("Предмет закупки", "item", toArray(supplier.item).join(", "))}
+    ${renderDetailInputRow("Регион", "region", toArray(supplier.region).join(", "))}
+    ${renderDetailInputRow("Заказчики", "client", toArray(supplier.client).join(", "))}
+    <div class="supplier-details-modal__row supplier-details-modal__row--edit">
+      <p class="supplier-details-modal__label">Ответственные</p>
+      <div class="supplier-edit-managers-box">
+        ${buildManagersEditRows(supplier.managers)}
+        <button type="button" class="supplier-modal-btn supplier-modal-btn--ghost" data-action="add-manager-row">Добавить ответственного</button>
+      </div>
+    </div>
+    ${renderDetailInputRow("Комментарий", "comment", supplier.comment)}
+    ${renderDetailInputRow("Ссылка на КП", "kp_url", supplier.kp_url)}
+  `
+}
+
+function renderDetailInputRow(label, key, value) {
+  return `
+    <div class="supplier-details-modal__row supplier-details-modal__row--edit">
+      <p class="supplier-details-modal__label">${escapeHtml(label)}</p>
+      <input class="supplier-edit-input" type="text" data-edit-key="${escapeHtml(key)}" value="${escapeHtml(value || "")}">
+    </div>
+  `
+}
+
+function collectManagersFromEditModal() {
+  if (!supplierDetailsOverlay) return []
+  const rows = supplierDetailsOverlay.querySelectorAll(".supplier-edit-managers-row")
+  const managers = []
+  rows.forEach((row) => {
+    const name = row.querySelector('[data-manager-field="name"]')?.value?.trim() || ""
+    const phone = row.querySelector('[data-manager-field="phone"]')?.value?.trim() || ""
+    const mail = row.querySelector('[data-manager-field="mail"]')?.value?.trim() || ""
+    const region = row.querySelector('[data-manager-field="region"]')?.value?.trim() || ""
+    if (!name && !phone && !mail && !region) return
+    managers.push({ name, phone, mail, region })
+  })
+  return managers
+}
+
+function getEditInputValue(key) {
+  if (!supplierDetailsOverlay) return ""
+  const input = supplierDetailsOverlay.querySelector(`[data-edit-key="${key}"]`)
+  return input ? String(input.value || "").trim() : ""
+}
+
+function addManagerEditRow() {
+  if (!supplierDetailsOverlay) return
+  const box = supplierDetailsOverlay.querySelector(".supplier-edit-managers-box")
+  if (!box) return
+  const idx = box.querySelectorAll(".supplier-edit-managers-row").length
+  const row = document.createElement("div")
+  row.className = "supplier-edit-managers-row"
+  row.setAttribute("data-manager-index", String(idx))
+  row.innerHTML = `
+    <input class="supplier-edit-input" type="text" data-manager-field="name" data-manager-index="${idx}" value="" placeholder="Имя">
+    <input class="supplier-edit-input" type="text" data-manager-field="phone" data-manager-index="${idx}" value="" placeholder="Телефон">
+    <input class="supplier-edit-input" type="text" data-manager-field="mail" data-manager-index="${idx}" value="" placeholder="Email">
+    <input class="supplier-edit-input" type="text" data-manager-field="region" data-manager-index="${idx}" value="" placeholder="Регион">
+  `
+  const addBtn = box.querySelector('[data-action="add-manager-row"]')
+  if (addBtn) box.insertBefore(row, addBtn)
+}
+
+function buildSupplierPayloadFromEdit(supplier) {
+  const payload = { ...supplier }
+  const name = getEditInputValue("name")
+  const inn = getEditInputValue("inn")
+  const smspRaw = getEditInputValue("is_smsp")
+  payload.name = name || supplier.name || ""
+  payload.inn = inn ? inn.replace(/\D/g, "") : supplier.inn || ""
+  payload.is_smsp = smspRaw === "+" ? true : smspRaw === "-" ? false : null
+  payload.company_number = parseCommaList(getEditInputValue("company_number"))
+  payload.company_mail = parseCommaList(getEditInputValue("company_mail"))
+  payload.okved_main = parseCommaList(getEditInputValue("okved_main"))
+  payload.okved_other = parseCommaList(getEditInputValue("okved_other"))
+  payload.item = parseCommaList(getEditInputValue("item"))
+  payload.region = parseCommaList(getEditInputValue("region"))
+  payload.client = parseCommaList(getEditInputValue("client"))
+  payload.comment = getEditInputValue("comment")
+  payload.kp_url = getEditInputValue("kp_url")
+  payload.managers = collectManagersFromEditModal()
+  return payload
+}
+
+async function saveSupplierFromModal() {
+  if (!currentModalSupplier || isSupplierModalSaving) return
+  if (currentModalSupplier.created_by !== currentUser?.id) {
+    await showAppAlert("Можно редактировать только своих поставщиков", { type: "error" })
+    return
+  }
+  isSupplierModalSaving = true
+  renderSupplierModalActions(currentModalSupplier)
+
+  try {
+    const nextSupplier = buildSupplierPayloadFromEdit(currentModalSupplier)
+    const validationError = validateSupplierData(nextSupplier)
+    if (validationError) {
+      await showAppAlert(validationError, { type: "error" })
+      return
+    }
+
+    const { id, created_by, created_at } = currentModalSupplier
+    const updatePayload = {
+      ...nextSupplier,
+      id,
+      created_by,
+      created_at
+    }
+
+    const { error } = await client.from("suppliers").update(updatePayload).eq("id", id)
+    if (error) {
+      await showAppAlert(`Ошибка обновления: ${error.message}`, { type: "error" })
+      return
+    }
+
+    currentModalSupplier = { ...currentModalSupplier, ...updatePayload }
+    supplierDetailsCache.set(String(id), currentModalSupplier)
+    const index = allSuppliers.findIndex((item) => String(item.id) === String(id))
+    if (index >= 0) allSuppliers[index] = { ...allSuppliers[index], ...currentModalSupplier }
+    cacheSuppliers(allSuppliers)
+    isSupplierModalEditing = false
+    renderSuppliers()
+
+    const modalBody = supplierDetailsOverlay?.querySelector(".supplier-details-modal__body")
+    if (modalBody) modalBody.innerHTML = buildSupplierDetailsHtml(currentModalSupplier, false)
+    renderSupplierModalActions(currentModalSupplier)
+    await showAppAlert("Данные поставщика обновлены", { type: "success" })
+  } finally {
+    isSupplierModalSaving = false
+    renderSupplierModalActions(currentModalSupplier)
+  }
+}
+
+async function deleteSupplierFromModal() {
+  if (!currentModalSupplier) return
+  if (currentModalSupplier.created_by !== currentUser?.id) {
+    await showAppAlert("Можно удалять только своих поставщиков", { type: "error" })
+    return
+  }
+  const supplierId = String(currentModalSupplier.id || "")
+  if (!supplierId || deletingSupplierIds.has(supplierId)) return
+  const confirmed = await showAppConfirm("Удалить поставщика?")
+  if (!confirmed) return
+
+  deletingSupplierIds.add(supplierId)
+  renderSupplierModalActions(currentModalSupplier)
+  const prevSuppliers = allSuppliers
+  allSuppliers = allSuppliers.filter((item) => String(item.id) !== supplierId)
+  renderSuppliers()
+  setSuppliersRefreshing(true)
+
+  const { error } = await client.from("suppliers").delete().eq("id", supplierId)
+  if (error) {
+    allSuppliers = prevSuppliers
+    deletingSupplierIds.delete(supplierId)
+    renderSuppliers()
+    setSuppliersRefreshing(false)
+    renderSupplierModalActions(currentModalSupplier)
+    await showAppAlert(`Ошибка удаления: ${error.message}`, { type: "error" })
+    return
+  }
+
+  deletingSupplierIds.delete(supplierId)
+  supplierDetailsCache.delete(supplierId)
+  closeSupplierDetailsModal()
+  await showAppAlert("Поставщик удален", { type: "success" })
+  await refreshSuppliers()
 }
 
 function closeSupplierDetailsModal() {
@@ -847,6 +1093,8 @@ function closeSupplierDetailsModal() {
     supplierDetailsOverlay.removeAttribute("data-supplier-id")
     supplierDetailsOverlay.removeEventListener("transitionend", onTransitionEnd)
     isSupplierModalClosing = false
+    isSupplierModalEditing = false
+    currentModalSupplier = null
   }
   supplierDetailsOverlay.addEventListener("transitionend", onTransitionEnd)
   document.body.classList.remove("modal-open")
@@ -860,6 +1108,7 @@ function ensureSupplierDetailsModal() {
     <div class="supplier-details-modal">
       <div class="supplier-details-modal__header">
         <p class="supplier-details-modal__title"></p>
+        <div class="supplier-details-modal__actions"></div>
         <button class="supplier-details-modal__close" aria-label="Закрыть">✕</button>
       </div>
       <div class="supplier-details-modal__body"></div>
@@ -872,6 +1121,41 @@ function ensureSupplierDetailsModal() {
 
   supplierDetailsOverlay.addEventListener("click", function (e) {
     if (e.target === supplierDetailsOverlay) closeSupplierDetailsModal()
+    const actionBtn = e.target.closest("[data-action]")
+    if (!actionBtn) return
+
+    const action = actionBtn.getAttribute("data-action")
+    if (action === "edit-supplier") {
+      if (!currentModalSupplier) return
+      isSupplierModalEditing = true
+      const modalBody = supplierDetailsOverlay.querySelector(".supplier-details-modal__body")
+      if (modalBody) modalBody.innerHTML = buildSupplierDetailsEditHtml(currentModalSupplier)
+      renderSupplierModalActions(currentModalSupplier)
+      return
+    }
+
+    if (action === "cancel-edit") {
+      if (!currentModalSupplier) return
+      isSupplierModalEditing = false
+      const modalBody = supplierDetailsOverlay.querySelector(".supplier-details-modal__body")
+      if (modalBody) modalBody.innerHTML = buildSupplierDetailsHtml(currentModalSupplier, false)
+      renderSupplierModalActions(currentModalSupplier)
+      return
+    }
+
+    if (action === "save-edit") {
+      void saveSupplierFromModal()
+      return
+    }
+
+    if (action === "delete-supplier") {
+      void deleteSupplierFromModal()
+      return
+    }
+
+    if (action === "add-manager-row") {
+      addManagerEditRow()
+    }
   })
 
   document.addEventListener("keydown", function (e) {
@@ -889,7 +1173,7 @@ function formatManagers(managers) {
   return toArray(managers)
     .map((m) => {
       if (typeof m !== "object" || m === null) return String(m)
-      const parts = [m.name, m.phone, m.mail].filter(Boolean)
+      const parts = [m.name, m.phone, m.mail, m.region ? `Регион: ${m.region}` : ""].filter(Boolean)
       return parts.join(" | ")
     })
     .filter(Boolean)
@@ -1193,14 +1477,14 @@ function supplierToExportRow(supplier) {
   return {
     Название: supplier.name || "",
     ИНН: supplier.inn || "",
+    Телефоны: toArray(supplier.company_number).join(", "),
+    Почты: toArray(supplier.company_mail).join(", "),
     СМСП:
       supplier.is_smsp === true
         ? "Да (+)"
         : supplier.is_smsp === false
           ? "Нет (-)"
           : "Не указано",
-    Телефоны: toArray(supplier.company_number).join(", "),
-    Почты: toArray(supplier.company_mail).join(", "),
     "Осн. ОКВЭД2": toArray(supplier.okved_main).join(", "),
     "Доп. ОКВЭД2": toArray(supplier.okved_other).join(", "),
     "Предмет закупки": toArray(supplier.item).join(", "),
@@ -1209,6 +1493,7 @@ function supplierToExportRow(supplier) {
     "Ответственные (имя)": managersContacts.names,
     "Ответственные (телефон)": managersContacts.phones,
     "Ответственные (email)": managersContacts.emails,
+    "Ответственные (регион)": managersContacts.regions,
     Комментарий: supplier.comment || "",
     "Ссылка на КП": supplier.kp_url || ""
   }
@@ -1219,12 +1504,14 @@ function splitManagersContacts(managers) {
   const names = []
   const phones = []
   const emails = []
+  const regions = []
 
   entries.forEach((manager) => {
     if (typeof manager === "object" && manager !== null) {
       if (manager.name) names.push(String(manager.name))
       if (manager.phone) phones.push(String(manager.phone))
       if (manager.mail) emails.push(String(manager.mail))
+      if (manager.region) regions.push(String(manager.region))
       return
     }
 
@@ -1235,6 +1522,10 @@ function splitManagersContacts(managers) {
       .filter(Boolean)
 
     parts.forEach((part) => {
+      if (part.toLowerCase().startsWith("регион:")) {
+        regions.push(part.replace(/^регион:\s*/i, ""))
+        return
+      }
       if (part.includes("@")) emails.push(part)
       else if (/\+?\d[\d\s\-()]{5,}/.test(part)) phones.push(part)
       else names.push(part)
@@ -1245,7 +1536,8 @@ function splitManagersContacts(managers) {
   return {
     names: uniq(names).join("; "),
     phones: uniq(phones).join("; "),
-    emails: uniq(emails).join("; ")
+    emails: uniq(emails).join("; "),
+    regions: uniq(regions).join("; ")
   }
 }
 
@@ -1281,9 +1573,9 @@ async function exportFilteredFindSuppliersToExcel() {
     worksheet.columns = [
       { header: "Название", key: "Название", width: 42 },
       { header: "ИНН", key: "ИНН", width: 16 },
-      { header: "СМСП", key: "СМСП", width: 13 },
       { header: "Телефоны", key: "Телефоны", width: 28 },
       { header: "Почты", key: "Почты", width: 34 },
+      { header: "СМСП", key: "СМСП", width: 13 },
       { header: "Осн. ОКВЭД2", key: "Осн. ОКВЭД2", width: 20 },
       { header: "Доп. ОКВЭД2", key: "Доп. ОКВЭД2", width: 20 },
       { header: "Предмет закупки", key: "Предмет закупки", width: 28 },
@@ -1292,6 +1584,7 @@ async function exportFilteredFindSuppliersToExcel() {
       { header: "Ответственные (имя)", key: "Ответственные (имя)", width: 24 },
       { header: "Ответственные (телефон)", key: "Ответственные (телефон)", width: 24 },
       { header: "Ответственные (email)", key: "Ответственные (email)", width: 30 },
+      { header: "Ответственные (регион)", key: "Ответственные (регион)", width: 24 },
       { header: "Комментарий", key: "Комментарий", width: 32 },
       { header: "Ссылка на КП", key: "Ссылка на КП", width: 70 }
     ]
@@ -1301,7 +1594,7 @@ async function exportFilteredFindSuppliersToExcel() {
 
     worksheet.autoFilter = {
       from: "A1",
-      to: "O1"
+      to: "P1"
     }
 
     const headerRow = worksheet.getRow(1)
@@ -1328,7 +1621,7 @@ async function exportFilteredFindSuppliersToExcel() {
       let maxLines = 1
       row.eachCell((cell) => {
         const isNameColumn = cell.col === 1
-        const isKpUrlColumn = cell.col === 15
+        const isKpUrlColumn = cell.col === 16
         const text = String(cell.value ?? "")
         const columnWidth = Number(worksheet.getColumn(cell.col).width || 20)
         const roughLines = Math.max(

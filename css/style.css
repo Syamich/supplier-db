@@ -424,7 +424,7 @@ body.modal-open {
 
 .supplier-table__row {
   display: grid;
-  grid-template-columns: 220px 120px 120px 180px 220px 180px 180px 260px 56px;
+  grid-template-columns: 220px 120px 180px 220px 120px 180px 180px 260px;
 }
 .supplier-table__row:not(.supplier-table__row--header) {
   cursor: pointer;
@@ -457,29 +457,6 @@ body.modal-open {
 
 .supplier-table__cell:last-child {
   border-right: none;
-}
-
-.supplier-table__cell--delete {
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  padding: 6px;
-}
-
-.supplier-delete-btn {
-  border: none;
-  background: transparent;
-  color: #d92525;
-  font-size: 18px;
-  font-weight: 700;
-  cursor: pointer;
-  line-height: 1;
-  position: relative;
-  z-index: 2;
-}
-
-.supplier-delete-btn:hover {
-  color: #b31212;
 }
 
 .supplier-pagination {
@@ -581,8 +558,9 @@ body.modal-open {
 
 .supplier-details-modal__header {
   display: flex;
-  justify-content: space-between;
+  justify-content: flex-start;
   align-items: center;
+  gap: 10px;
   padding: 14px 18px;
   border-bottom: 1px solid #ededed;
 }
@@ -599,6 +577,60 @@ body.modal-open {
   font-size: 22px;
   line-height: 1;
   cursor: pointer;
+}
+
+.supplier-details-modal__actions {
+  display: flex;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.supplier-modal-btn {
+  border: 1px solid #d3d3d3;
+  background: #fff;
+  border-radius: 8px;
+  height: 34px;
+  padding: 0 12px;
+  cursor: pointer;
+}
+
+.supplier-modal-btn--danger {
+  border-color: #e7b0b0;
+  color: #b42323;
+  background: #fff5f5;
+}
+
+.supplier-modal-btn--ghost {
+  background: #f7f7f7;
+}
+
+.supplier-modal-btn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.supplier-details-modal__row--edit {
+  align-items: center;
+}
+
+.supplier-edit-input {
+  width: 100%;
+  border: 1px solid #d3d3d3;
+  border-radius: 6px;
+  min-height: 34px;
+  padding: 7px 9px;
+  box-sizing: border-box;
+}
+
+.supplier-edit-managers-box {
+  display: grid;
+  gap: 8px;
+}
+
+.supplier-edit-managers-row {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
 }
 
 .supplier-details-modal__body {
@@ -728,7 +760,7 @@ body.modal-open {
 
 @media (max-width: 1280px) {
   .supplier-table__row {
-    grid-template-columns: 180px 110px 110px 160px 180px 150px 150px 220px 52px;
+    grid-template-columns: 180px 110px 160px 180px 110px 150px 150px 220px;
   }
 
   .supplier-table__cell {
@@ -738,6 +770,10 @@ body.modal-open {
 
   .supplier-details-modal__row {
     grid-template-columns: 180px 1fr;
+  }
+
+  .supplier-edit-managers-row {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 
