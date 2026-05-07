@@ -20,6 +20,8 @@ let appAlertOverlay = null
 let appAlertResolve = null
 let appAlertMode = "alert"
 let isInnAutofillLoading = false
+const supplierDetailsCache = new Map()
+const supplierDetailsRequests = new Map()
 const PAGE_SIZE = 100
 let findCurrentPage = 1
 let lkCurrentPage = 1
@@ -35,6 +37,22 @@ const addInnInput = document.querySelector('.add-form-input[name="inn"]')
 const addAutofillBtn = document.querySelector(".add-form-autofill")
 const findRefreshSpinner = createRefreshSpinner()
 const lkRefreshSpinner = createRefreshSpinner()
+const SUPPLIERS_LIST_FIELDS = [
+  "id",
+  "created_by",
+  "created_at",
+  "name",
+  "inn",
+  "is_smsp",
+  "company_number",
+  "company_mail",
+  "okved_main",
+  "okved_other",
+  "item",
+  "region",
+  "client",
+  "comment"
+].join(", ")
 
 window.addEventListener("load", async () => {
   showSuppliersLoadingState()
@@ -290,7 +308,7 @@ async function refreshSuppliers() {
   setSuppliersRefreshing(true)
   const { data, error } = await client
     .from("suppliers")
-    .select("*")
+    .select(SUPPLIERS_LIST_FIELDS)
     .order("created_at", { ascending: false })
 
   if (error) {
@@ -301,7 +319,7 @@ async function refreshSuppliers() {
     return
   }
 
-  allSuppliers = Array.isArray(data) ? data : []
+  allSuppliers = toSuppliersListShape(Array.isArray(data) ? data : [])
   cacheSuppliers(allSuppliers)
   renderSuppliers()
   setSuppliersRefreshing(false)
@@ -738,12 +756,12 @@ function bindSupplierRowOpenDetails(container, list) {
       if (!supplierId) return
       const supplier = rowMap.get(supplierId)
       if (!supplier) return
-      openSupplierDetailsModal(supplier)
+      void openSupplierDetailsModal(supplier)
     })
   })
 }
 
-function openSupplierDetailsModal(supplier) {
+async function openSupplierDetailsModal(supplier) {
   ensureSupplierDetailsModal()
   if (!supplierDetailsOverlay) return
 
@@ -751,30 +769,10 @@ function openSupplierDetailsModal(supplier) {
   const title = supplierDetailsOverlay.querySelector(".supplier-details-modal__title")
   if (!modalBody || !title) return
 
-  const managersText = toArray(supplier.managers)
-    .map((m) => {
-      if (typeof m !== "object" || m === null) return String(m)
-      const parts = [m.name, m.phone, m.mail].filter(Boolean)
-      return parts.join(" | ")
-    })
-    .filter(Boolean)
-    .join("\n")
-
   title.textContent = supplier.name || "Детали поставщика"
-  modalBody.innerHTML = `
-    ${renderDetailRow("ИНН", supplier.inn)}
-    ${renderDetailRow("СМСП", supplier.is_smsp === true ? "Да (+)" : supplier.is_smsp === false ? "Нет (-)" : "Не указано")}
-    ${renderDetailRow("Телефоны", toArray(supplier.company_number).join(", "))}
-    ${renderDetailRow("Почты", toArray(supplier.company_mail).join(", "))}
-    ${renderDetailRow("Основной ОКВЭД2", toArray(supplier.okved_main).join(", "))}
-    ${renderDetailRow("Доп. ОКВЭД2", toArray(supplier.okved_other).join(", "))}
-    ${renderDetailRow("Предмет закупки", toArray(supplier.item).join(", "))}
-    ${renderDetailRow("Регион", toArray(supplier.region).join(", "))}
-    ${renderDetailRow("Заказчики", toArray(supplier.client).join(", "))}
-    ${renderDetailRow("Ответственные", managersText)}
-    ${renderDetailRow("Комментарий", supplier.comment)}
-    ${renderDetailRow("Ссылка на КП", supplier.kp_url)}
-  `
+  const needsDetailsLoad = !hasFullSupplierDetails(supplier)
+  supplierDetailsOverlay.setAttribute("data-supplier-id", String(supplier.id || ""))
+  modalBody.innerHTML = buildSupplierDetailsHtml(supplier, needsDetailsLoad)
 
   isSupplierModalClosing = false
   supplierDetailsOverlay.classList.remove("hidden")
@@ -782,6 +780,15 @@ function openSupplierDetailsModal(supplier) {
   void supplierDetailsOverlay.offsetWidth
   supplierDetailsOverlay.classList.add("is-visible")
   document.body.classList.add("modal-open")
+
+  if (!needsDetailsLoad) return
+  const fullSupplier = await fetchSupplierDetailsById(supplier.id)
+  if (!fullSupplier) return
+  if (!supplierDetailsOverlay || supplierDetailsOverlay.classList.contains("hidden")) return
+
+  const openedSupplierId = supplierDetailsOverlay.getAttribute("data-supplier-id")
+  if (String(openedSupplierId) !== String(supplier.id)) return
+  modalBody.innerHTML = buildSupplierDetailsHtml(fullSupplier, false)
 
 }
 
@@ -793,6 +800,7 @@ function closeSupplierDetailsModal() {
 
   const onTransitionEnd = () => {
     supplierDetailsOverlay.classList.add("hidden")
+    supplierDetailsOverlay.removeAttribute("data-supplier-id")
     supplierDetailsOverlay.removeEventListener("transitionend", onTransitionEnd)
     isSupplierModalClosing = false
   }
@@ -825,6 +833,72 @@ function ensureSupplierDetailsModal() {
   document.addEventListener("keydown", function (e) {
     if (e.key === "Escape") closeSupplierDetailsModal()
   })
+}
+
+function hasFullSupplierDetails(supplier) {
+  if (!supplier || typeof supplier !== "object") return false
+  return Object.prototype.hasOwnProperty.call(supplier, "managers") &&
+    Object.prototype.hasOwnProperty.call(supplier, "kp_url")
+}
+
+function formatManagers(managers) {
+  return toArray(managers)
+    .map((m) => {
+      if (typeof m !== "object" || m === null) return String(m)
+      const parts = [m.name, m.phone, m.mail].filter(Boolean)
+      return parts.join(" | ")
+    })
+    .filter(Boolean)
+    .join("\n")
+}
+
+function buildSupplierDetailsHtml(supplier, isLoadingExtended) {
+  const managersText = isLoadingExtended ? "Подгружаются..." : formatManagers(supplier.managers)
+  const kpUrl = isLoadingExtended ? "Подгружается..." : supplier.kp_url
+  return `
+    ${renderDetailRow("ИНН", supplier.inn)}
+    ${renderDetailRow("СМСП", supplier.is_smsp === true ? "Да (+)" : supplier.is_smsp === false ? "Нет (-)" : "Не указано")}
+    ${renderDetailRow("Телефоны", toArray(supplier.company_number).join(", "))}
+    ${renderDetailRow("Почты", toArray(supplier.company_mail).join(", "))}
+    ${renderDetailRow("Основной ОКВЭД2", toArray(supplier.okved_main).join(", "))}
+    ${renderDetailRow("Доп. ОКВЭД2", toArray(supplier.okved_other).join(", "))}
+    ${renderDetailRow("Предмет закупки", toArray(supplier.item).join(", "))}
+    ${renderDetailRow("Регион", toArray(supplier.region).join(", "))}
+    ${renderDetailRow("Заказчики", toArray(supplier.client).join(", "))}
+    ${renderDetailRow("Ответственные", managersText)}
+    ${renderDetailRow("Комментарий", supplier.comment)}
+    ${renderDetailRow("Ссылка на КП", kpUrl)}
+  `
+}
+
+async function fetchSupplierDetailsById(supplierId) {
+  const id = String(supplierId || "")
+  if (!id) return null
+  if (supplierDetailsCache.has(id)) return supplierDetailsCache.get(id)
+  if (supplierDetailsRequests.has(id)) return supplierDetailsRequests.get(id)
+
+  const request = client
+    .from("suppliers")
+    .select("*")
+    .eq("id", id)
+    .maybeSingle()
+    .then(({ data, error }) => {
+      if (error || !data) {
+        console.error("Ошибка загрузки деталей поставщика:", error)
+        return null
+      }
+
+      supplierDetailsCache.set(id, data)
+      const listIndex = allSuppliers.findIndex((supplier) => String(supplier.id) === id)
+      if (listIndex >= 0) allSuppliers[listIndex] = { ...allSuppliers[listIndex], ...data }
+      return data
+    })
+    .finally(() => {
+      supplierDetailsRequests.delete(id)
+    })
+
+  supplierDetailsRequests.set(id, request)
+  return request
 }
 
 function renderDetailRow(label, value) {
@@ -892,7 +966,8 @@ function getSuppliersCacheTsKey() {
 
 function cacheSuppliers(suppliers) {
   try {
-    localStorage.setItem(getSuppliersCacheKey(), JSON.stringify(suppliers))
+    const listOnly = toSuppliersListShape(suppliers)
+    localStorage.setItem(getSuppliersCacheKey(), JSON.stringify(listOnly))
     localStorage.setItem(getSuppliersCacheTsKey(), String(Date.now()))
   } catch (e) {
     console.warn("Не удалось сохранить кэш suppliers:", e)
@@ -906,11 +981,47 @@ function applySuppliersFromCache() {
     const parsed = JSON.parse(raw)
     if (!Array.isArray(parsed) || !parsed.length) return
 
-    allSuppliers = parsed
+    allSuppliers = toSuppliersListShape(parsed)
     renderSuppliers()
   } catch (e) {
     console.warn("Не удалось прочитать кэш suppliers:", e)
   }
+}
+
+function toSuppliersListShape(suppliers) {
+  if (!Array.isArray(suppliers)) return []
+  return suppliers.map((supplier) => ({
+    id: supplier?.id ?? null,
+    created_by: supplier?.created_by ?? null,
+    created_at: supplier?.created_at ?? null,
+    name: supplier?.name ?? "",
+    inn: supplier?.inn ?? "",
+    is_smsp: supplier?.is_smsp ?? null,
+    company_number: Array.isArray(supplier?.company_number)
+      ? supplier.company_number
+      : supplier?.company_number
+        ? [supplier.company_number]
+        : [],
+    company_mail: Array.isArray(supplier?.company_mail)
+      ? supplier.company_mail
+      : supplier?.company_mail
+        ? [supplier.company_mail]
+        : [],
+    okved_main: Array.isArray(supplier?.okved_main)
+      ? supplier.okved_main
+      : supplier?.okved_main
+        ? [supplier.okved_main]
+        : [],
+    okved_other: Array.isArray(supplier?.okved_other)
+      ? supplier.okved_other
+      : supplier?.okved_other
+        ? [supplier.okved_other]
+        : [],
+    item: Array.isArray(supplier?.item) ? supplier.item : supplier?.item ? [supplier.item] : [],
+    region: Array.isArray(supplier?.region) ? supplier.region : supplier?.region ? [supplier.region] : [],
+    client: Array.isArray(supplier?.client) ? supplier.client : supplier?.client ? [supplier.client] : [],
+    comment: supplier?.comment ?? ""
+  }))
 }
 
 function showSuppliersLoadingState() {
