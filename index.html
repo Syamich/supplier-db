@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Nata+Sans:wght@100..900&display=swap" rel="stylesheet">
+    <title>База REST СПП</title>
+    <link rel="stylesheet" href="./css/style.css">
+</head>
+<body>
+    <!-- <div class="darkmod-box">
+        <input type="checkbox" id="darkmode-toggle" class="darkmode-toggle">
+        <label for="darkmode-toggle" class="toggle-label">
+            <span class="toggle-slider"></span>
+            <span class="toggle-text">Темный режим</span>
+        </label>
+    </div> -->
+    
+    <div class="page-area">
+        <div class="tabs-menu">
+            <div class="tabs">
+                <button class="tab add-supplier-btn" data-number="1">Добавить нового</button>
+                <button class="tab find-supplier-btn" data-number="2">Поиск</button>
+                <button class="tab lk-suppliers-btn" data-number="3">Мои поставщики</button>
+            </div>
+        </div>
+        <div class="tab-block add-supplier">
+            <p class="add-block-title">Введи данные чтобы добавить поставщика в базу</p>
+            <div class="add-form">
+                <label for="inn">ИНН*</label>
+                <input type="text" class="add-form-input" name="inn" required>
+                <div class="add-form-inn-actions">
+                    <button class="add-form-autofill main-btn-style" disabled>Заполнить автоматически</button>
+                </div>
+                <label for="name">Название</label>
+                <input type="text" class="add-form-input" name="name">
+                <label for="company-number">Номер телефона компании (можно несколько через запятую)</label>
+                <input type="tel" class="add-form-input" name="company_number">
+                <label for="company-mail">Почта компании (можно несколько через запятую)</label>
+                <input type="mail" class="add-form-input" name="company_mail">
+                <label for="smsp">Является СМСП (поставить + или - )</label>
+                <input type="text" class="add-form-input" name="is_smsp">
+                <label for="company-managers">Ответственное лицо</label>
+                <div class="add-form-managers">
+                    <div class="add-form-managers-inputs"></div>
+                    <button class="add-form-managers-btn main-btn-style">Добавить ответственного</button>
+                </div>
+                <label for="okved-main">Основной ОКВЭД2 (можно несколько через запятую)</label>
+                <input type="text" class="add-form-input" name="okved_main">
+                <label for="okved-other">Дополнительные ОКВЭД2 (можно несколько через запятую)</label>
+                <input type="text" class="add-form-input" name="okved_other">
+                <label for="item">Предмет закупки (можно несколько через запятую)</label>
+                <input type="text" class="add-form-input" name="item">
+                <label for="comment">Ваш комментарий</label>
+                <input type="text" class="add-form-input" name="comment">
+                <label for="region">Регион поставок (можно несколько через запятую)</label>
+                <input type="text" class="add-form-input" name="region">
+                <label for="client">Заказчики (можно несколько через запятую)</label>
+                <input type="text" class="add-form-input" name="client">
+                <label for="kp-url">Ссылка на КП на диске</label>
+                <input type="text" class="add-form-input" name="kp_url">
+                <div class="add-form-button-box">
+                    <button class="add-form-cancel">Очистить</button>
+                    <button class="add-form-save main-btn-style">Добавить</button>
+                </div>
+            </div>
+        </div>
+        <div class="tab-block find-supplier">
+            <p class="find-title">Поиск</p>
+            <input type="text" class="find-input-main" name="find" placeholder="Поиск...">
+            <div class="find-supplier-filters-box">
+                <p class="find-suppliers-filters-title">Фильтры <span class="find-supp-filter-arrow"><svg xmlns="http://www.w3.org/2000/svg" version="1.0" viewBox="0 0 100 100">
+  <path d="M11.4 7.4c-.3.8 5.5 10.5 13.2 22L38.3 50 24.6 70.6c-7.7 11.5-13.5 21.2-13.2 22 .4 1 2.7 1.4 8.9 1.4 9.9 0 8.6 1.1 20.8-16.7C45.7 70.5 49.7 65 50 65s3.2 3.9 6.5 8.7S64.4 85 66.7 88.2L71 94h8.5c6.4 0 8.7-.4 9.1-1.4.3-.8-5.5-10.5-13.2-22L61.7 50l13.7-20.6c7.7-11.5 13.5-21.2 13.2-22-.4-1-2.7-1.4-9.1-1.4H71l-4.3 5.8c-2.3 3.2-6.9 9.7-10.2 14.5S50.3 35 50 35s-4.3-5.5-8.9-12.3C28.9 4.9 30.2 6 20.3 6c-6.2 0-8.5.4-8.9 1.4M39 24.5c5.5 8 10.5 14.5 11 14.5s5.5-6.5 11-14.5L71.2 10H85L72 29.5C64.9 40.2 59 49.4 59 50s5.9 9.8 13 20.5L85 90H71.2L61 75.5C55.5 67.5 50.5 61 50 61s-5.5 6.5-11 14.5L28.8 90H15l13-19.5C35.1 59.8 41 50.6 41 50s-5.9-9.8-13-20.5L15 10h13.8z" fill="#3d3d3d"/>
+</svg></span></p>
+                <!-- <span class="find-supp-filter-arrow"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 427.00 484.08" data-guides="{&quot;vertical&quot;:[],&quot;horizontal&quot;:[]}"><defs/><path fill="transparent" fill-opacity="1" stroke="#000000" stroke-opacity="1" stroke-width="40" id="tSvgfdc07af429" d="M410.5 220.3894C427.1667 230.0119 427.1667 254.0681 410.5 263.6906L41.5 476.7329C24.8333 486.3554 4 474.3273 4 455.0822C4 455.0822 4 455.0822 4 455.0822V28.9978C4 9.7527 24.8333 -2.2754 41.5 7.3471C41.5 7.3471 41.5 7.3471 41.5 7.3471Z" title="Polygon 1" style=""/></svg></span> -->
+                <div class="find-filters">
+                    <input type="text" class="find-filter" name="find_name" placeholder="Название...">
+                    <input type="text" class="find-filter" name="find_main_okved" placeholder="Основной ОКВЭД2...">
+                    <input type="text" class="find-filter" name="find_other_okved" placeholder="Дополнительный ОКВЭД2...">
+                    <input type="text" class="find-filter" name="find_item" placeholder="Предмет закупки...">
+                    <input type="text" class="find-filter" name="find_region" placeholder="Регион...">
+                    <input type="text" class="find-filter" name="find_client" placeholder="Заказчик...">
+                    <input type="text" class="find-filter" name="find_comment" placeholder="Комментарий...">
+                    <input type="text" class="find-filter" name="find_smsp" placeholder="Является СМСП (+/-)...">
+                </div>
+                <div class="find-line"></div>
+            </div>
+            <div class="find-uotput-list-box">
+                <p class="find-output-title">Пусто...</p>
+                <div class="find-output-list"></div>
+            </div>
+        </div>
+        <div class="tab-block lk-suppliers">
+            <p class="lk-title">Список моих поставщиков</p>
+            <input type="text" class="lk-input-main" name="lk" placeholder="Поиск...">
+            <div class="lk-supplier-filters-box">
+                <p class="lk-suppliers-filters-title">Фильтры <span class="lk-find-supp-filter-arrow"><svg xmlns="http://www.w3.org/2000/svg" version="1.0" viewBox="0 0 100 100">
+  <path d="M11.4 7.4c-.3.8 5.5 10.5 13.2 22L38.3 50 24.6 70.6c-7.7 11.5-13.5 21.2-13.2 22 .4 1 2.7 1.4 8.9 1.4 9.9 0 8.6 1.1 20.8-16.7C45.7 70.5 49.7 65 50 65s3.2 3.9 6.5 8.7S64.4 85 66.7 88.2L71 94h8.5c6.4 0 8.7-.4 9.1-1.4.3-.8-5.5-10.5-13.2-22L61.7 50l13.7-20.6c7.7-11.5 13.5-21.2 13.2-22-.4-1-2.7-1.4-9.1-1.4H71l-4.3 5.8c-2.3 3.2-6.9 9.7-10.2 14.5S50.3 35 50 35s-4.3-5.5-8.9-12.3C28.9 4.9 30.2 6 20.3 6c-6.2 0-8.5.4-8.9 1.4M39 24.5c5.5 8 10.5 14.5 11 14.5s5.5-6.5 11-14.5L71.2 10H85L72 29.5C64.9 40.2 59 49.4 59 50s5.9 9.8 13 20.5L85 90H71.2L61 75.5C55.5 67.5 50.5 61 50 61s-5.5 6.5-11 14.5L28.8 90H15l13-19.5C35.1 59.8 41 50.6 41 50s-5.9-9.8-13-20.5L15 10h13.8z" fill="#3d3d3d"/>
+</svg></span></p>
+                <!-- <span class="lk-supp-filter-arrow"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 427.00 484.08" data-guides="{&quot;vertical&quot;:[],&quot;horizontal&quot;:[]}"><defs/><path fill="transparent" fill-opacity="1" stroke="#000000" stroke-opacity="1" stroke-width="40" id="tSvgfdc07af429" d="M410.5 220.3894C427.1667 230.0119 427.1667 254.0681 410.5 263.6906L41.5 476.7329C24.8333 486.3554 4 474.3273 4 455.0822C4 455.0822 4 455.0822 4 455.0822V28.9978C4 9.7527 24.8333 -2.2754 41.5 7.3471C41.5 7.3471 41.5 7.3471 41.5 7.3471Z" title="Polygon 1" style=""/></svg></span> -->
+                <div class="lk-find-filters">
+                    <input type="text" class="lk-find-filter" name="lk-find_name" placeholder="Название...">
+                    <input type="text" class="lk-find-filter" name="lk-find_main_okved" placeholder="Основной ОКВЭД2...">
+                    <input type="text" class="lk-find-filter" name="lk-find_other_okved" placeholder="Дополнительный ОКВЭД2...">
+                    <input type="text" class="lk-find-filter" name="lk-find_item" placeholder="Предмет закупки...">
+                    <input type="text" class="lk-find-filter" name="lk-find_region" placeholder="Регион...">
+                    <input type="text" class="lk-find-filter" name="lk-find_client" placeholder="Заказчик...">
+                    <input type="text" class="lk-find-filter" name="lk-find_comment" placeholder="Комментарий...">
+                    <input type="text" class="lk-find-filter" name="lk-find_smsp" placeholder="Является СМСП (+/-)...">
+                </div>
+                <div class="find-line"></div>
+            </div>
+            <div class="lk-uotput-list-box">
+                <p class="lk-output-title">Пусто...</p>
+                <div class="find-output-list"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Попап авторизации в базе -->
+    <div id="popup" class="popup-overlay hidden">
+        <div class="popup">
+            <div class="toggle">
+                <button id="loginTab" class="active" onclick="switchTab('login')">Вход</button>
+                <button id="registerTab" onclick="switchTab('register')">Регистрация</button>
+            </div>
+
+            <input type="email" id="email" placeholder="Email">
+            <input type="password" id="password" placeholder="Пароль">
+
+            <button onclick="handleAuth()" id="actionBtn" class="main-btn-style">Войти</button>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="./js/app.js" defer></script>
+</body>
+</html>
