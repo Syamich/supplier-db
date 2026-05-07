@@ -113,7 +113,7 @@ window.addEventListener("load", async () => {
 
     hidePopup()
     applySuppliersFromCache()
-    await refreshSuppliers({ forceFresh: true })
+    await refreshSuppliers()
     void refreshSuppliers({ forceFresh: true, silent: true })
   } catch (err) {
     console.error("Auth check error:", err)
@@ -275,7 +275,7 @@ async function handleAuth() {
       }
 
       hidePopup()
-      await refreshSuppliers({ forceFresh: true })
+      await refreshSuppliers()
       return
     }
 
