@@ -88,7 +88,10 @@
                 <div class="find-line"></div>
             </div>
             <div class="find-uotput-list-box">
-                <p class="find-output-title">Пусто...</p>
+                <div class="find-output-head">
+                    <p class="find-output-title">Пусто...</p>
+                    <button class="find-export-btn main-btn-style" type="button" disabled>Выгрузить Excel</button>
+                </div>
                 <div class="find-output-list"></div>
             </div>
         </div>
@@ -135,6 +138,9 @@
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/file-saver@2.0.5/dist/FileSaver.min.js"></script>
     <script src="./js/app.js" defer></script>
 </body>
 </html>

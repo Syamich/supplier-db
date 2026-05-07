@@ -174,6 +174,7 @@ body.modal-open {
   display: inline-flex;
   align-items: center;
   gap: 8px;
+  margin: 0;
 }
 .find-filters {
   margin-top: 10px;
@@ -390,6 +391,26 @@ body.modal-open {
   border-radius: 10px;
   background: #fff;
   box-sizing: border-box;
+}
+
+.find-output-head {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.find-export-btn {
+  min-width: 170px;
+}
+
+.find-export-btn:disabled {
+  background: #d4d4d4;
+  color: #6e6e6e;
+  cursor: not-allowed;
+  box-shadow: none;
 }
 
 .supplier-table {

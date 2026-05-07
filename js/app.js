@@ -20,6 +20,7 @@ let appAlertOverlay = null
 let appAlertResolve = null
 let appAlertMode = "alert"
 let isInnAutofillLoading = false
+let isFindExportLoading = false
 const supplierDetailsCache = new Map()
 const supplierDetailsRequests = new Map()
 const deletingSupplierIds = new Set()
@@ -37,6 +38,7 @@ const lkOutputTitle = document.querySelector(".lk-output-title")
 const lkOutputList = document.querySelector(".lk-suppliers .find-output-list")
 const addInnInput = document.querySelector('.add-form-input[name="inn"]')
 const addAutofillBtn = document.querySelector(".add-form-autofill")
+const findExportBtn = document.querySelector(".find-export-btn")
 const findRefreshSpinner = createRefreshSpinner()
 const lkRefreshSpinner = createRefreshSpinner()
 const SUPPLIERS_LIST_FIELDS = [
@@ -135,6 +137,10 @@ addInnInput?.addEventListener("input", function () {
 addAutofillBtn?.addEventListener("click", async function (e) {
   e.preventDefault()
   await autofillSupplierByInn()
+})
+
+findExportBtn?.addEventListener("click", async function () {
+  await exportFilteredFindSuppliersToExcel()
 })
 updateInnAutofillButtonState()
 
@@ -358,6 +364,7 @@ function renderSuppliers() {
 
   renderList(findOutputList, findOutputTitle, filteredForFind, "Ничего не найдено", "find")
   renderList(lkOutputList, lkOutputTitle, filteredForLk, "У вас пока нет поставщиков", "lk")
+  updateFindExportButtonState(filteredForFind.length > 0)
   updateRefreshIndicators()
 }
 
@@ -1168,6 +1175,242 @@ function updateInnAutofillButtonState() {
   addAutofillBtn.innerText = "Заполнить автоматически"
   const canUse = Boolean(currentUser) && isValidInn(getInnFromInput())
   addAutofillBtn.disabled = !canUse
+}
+
+function updateFindExportButtonState(hasRows) {
+  if (!findExportBtn) return
+  if (isFindExportLoading) {
+    findExportBtn.innerText = "Подготовка..."
+    findExportBtn.disabled = true
+    return
+  }
+  findExportBtn.innerText = "Выгрузить Excel"
+  findExportBtn.disabled = !hasRows
+}
+
+function supplierToExportRow(supplier) {
+  const managersContacts = splitManagersContacts(supplier.managers)
+  return {
+    Название: supplier.name || "",
+    ИНН: supplier.inn || "",
+    СМСП:
+      supplier.is_smsp === true
+        ? "Да (+)"
+        : supplier.is_smsp === false
+          ? "Нет (-)"
+          : "Не указано",
+    Телефоны: toArray(supplier.company_number).join(", "),
+    Почты: toArray(supplier.company_mail).join(", "),
+    "Осн. ОКВЭД2": toArray(supplier.okved_main).join(", "),
+    "Доп. ОКВЭД2": toArray(supplier.okved_other).join(", "),
+    "Предмет закупки": toArray(supplier.item).join(", "),
+    Регион: toArray(supplier.region).join(", "),
+    Заказчики: toArray(supplier.client).join(", "),
+    "Ответственные (имя)": managersContacts.names,
+    "Ответственные (телефон)": managersContacts.phones,
+    "Ответственные (email)": managersContacts.emails,
+    Комментарий: supplier.comment || "",
+    "Ссылка на КП": supplier.kp_url || ""
+  }
+}
+
+function splitManagersContacts(managers) {
+  const entries = toArray(managers).filter(Boolean)
+  const names = []
+  const phones = []
+  const emails = []
+
+  entries.forEach((manager) => {
+    if (typeof manager === "object" && manager !== null) {
+      if (manager.name) names.push(String(manager.name))
+      if (manager.phone) phones.push(String(manager.phone))
+      if (manager.mail) emails.push(String(manager.mail))
+      return
+    }
+
+    const raw = String(manager)
+    const parts = raw
+      .split("|")
+      .map((part) => part.trim())
+      .filter(Boolean)
+
+    parts.forEach((part) => {
+      if (part.includes("@")) emails.push(part)
+      else if (/\+?\d[\d\s\-()]{5,}/.test(part)) phones.push(part)
+      else names.push(part)
+    })
+  })
+
+  const uniq = (arr) => Array.from(new Set(arr))
+  return {
+    names: uniq(names).join("; "),
+    phones: uniq(phones).join("; "),
+    emails: uniq(emails).join("; ")
+  }
+}
+
+async function exportFilteredFindSuppliersToExcel() {
+  const filteredForFind = applyFindFilters(allSuppliers, searchData)
+  if (!filteredForFind.length) {
+    await showAppAlert("Нет данных для выгрузки по текущим фильтрам", { type: "info" })
+    return
+  }
+
+  isFindExportLoading = true
+  updateFindExportButtonState(filteredForFind.length > 0)
+
+  if (typeof ExcelJS === "undefined" || typeof saveAs === "undefined") {
+    try {
+      await showAppAlert("Не удалось загрузить библиотеку Excel. Обновите страницу и попробуйте снова", {
+        type: "error"
+      })
+    } finally {
+      isFindExportLoading = false
+      updateFindExportButtonState(filteredForFind.length > 0)
+    }
+    return
+  }
+
+  try {
+    const fullSuppliers = await getSuppliersForExport(filteredForFind)
+    const exportRows = fullSuppliers.map((supplier) => supplierToExportRow(supplier))
+    const workbook = new ExcelJS.Workbook()
+    const worksheet = workbook.addWorksheet("Поставщики", {
+      views: [{ state: "frozen", ySplit: 1 }]
+    })
+    worksheet.columns = [
+      { header: "Название", key: "Название", width: 42 },
+      { header: "ИНН", key: "ИНН", width: 16 },
+      { header: "СМСП", key: "СМСП", width: 13 },
+      { header: "Телефоны", key: "Телефоны", width: 28 },
+      { header: "Почты", key: "Почты", width: 34 },
+      { header: "Осн. ОКВЭД2", key: "Осн. ОКВЭД2", width: 20 },
+      { header: "Доп. ОКВЭД2", key: "Доп. ОКВЭД2", width: 20 },
+      { header: "Предмет закупки", key: "Предмет закупки", width: 28 },
+      { header: "Регион", key: "Регион", width: 20 },
+      { header: "Заказчики", key: "Заказчики", width: 26 },
+      { header: "Ответственные (имя)", key: "Ответственные (имя)", width: 24 },
+      { header: "Ответственные (телефон)", key: "Ответственные (телефон)", width: 24 },
+      { header: "Ответственные (email)", key: "Ответственные (email)", width: 30 },
+      { header: "Комментарий", key: "Комментарий", width: 32 },
+      { header: "Ссылка на КП", key: "Ссылка на КП", width: 70 }
+    ]
+    exportRows.forEach((row) => {
+      worksheet.addRow(row)
+    })
+
+    worksheet.autoFilter = {
+      from: "A1",
+      to: "O1"
+    }
+
+    const headerRow = worksheet.getRow(1)
+    headerRow.height = 30
+    headerRow.eachCell((cell) => {
+      cell.font = { bold: true, color: { argb: "FFFFFFFF" } }
+      cell.fill = {
+        type: "pattern",
+        pattern: "solid",
+        fgColor: { argb: "FF2F75B5" }
+      }
+      cell.alignment = { vertical: "middle", horizontal: "center", wrapText: true }
+      cell.border = {
+        top: { style: "thin", color: { argb: "FF9C9C9C" } },
+        left: { style: "thin", color: { argb: "FF9C9C9C" } },
+        bottom: { style: "thin", color: { argb: "FF9C9C9C" } },
+        right: { style: "thin", color: { argb: "FF9C9C9C" } }
+      }
+    })
+    worksheet.getCell("A1").alignment = { vertical: "middle", horizontal: "left", wrapText: true }
+
+    worksheet.eachRow((row, rowNumber) => {
+      if (rowNumber === 1) return
+      let maxLines = 1
+      row.eachCell((cell) => {
+        const isNameColumn = cell.col === 1
+        const isKpUrlColumn = cell.col === 15
+        const text = String(cell.value ?? "")
+        const columnWidth = Number(worksheet.getColumn(cell.col).width || 20)
+        const roughLines = Math.max(
+          1,
+          Math.ceil(text.length / Math.max(1, Math.floor(columnWidth * 1.05)))
+        )
+        maxLines = Math.max(maxLines, roughLines)
+        cell.alignment = {
+          vertical: "middle",
+          horizontal: isNameColumn || isKpUrlColumn ? "left" : "center",
+          wrapText: true,
+          shrinkToFit: true
+        }
+        cell.border = {
+          top: { style: "thin", color: { argb: "FFC6C6C6" } },
+          left: { style: "thin", color: { argb: "FFC6C6C6" } },
+          bottom: { style: "thin", color: { argb: "FFC6C6C6" } },
+          right: { style: "thin", color: { argb: "FFC6C6C6" } }
+        }
+      })
+      row.height = Math.min(120, Math.max(24, maxLines * 16))
+    })
+
+    const date = new Date().toISOString().slice(0, 10)
+    const fileName = `suppliers-filtered-${date}.xlsx`
+    const buffer = await workbook.xlsx.writeBuffer()
+    const blob = new Blob([buffer], {
+      type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    })
+    saveAs(blob, fileName)
+    await showAppAlert("Excel-файл выгружен", { type: "success" })
+  } finally {
+    isFindExportLoading = false
+    updateFindExportButtonState(filteredForFind.length > 0)
+  }
+}
+
+async function getSuppliersForExport(suppliers) {
+  const idsToLoad = suppliers
+    .filter((supplier) => !hasFullSupplierDetails(supplier))
+    .map((supplier) => supplier.id)
+    .filter(Boolean)
+
+  if (!idsToLoad.length) return suppliers
+
+  const detailsById = await fetchSuppliersDetailsBatch(idsToLoad)
+  return suppliers.map((supplier) => detailsById.get(String(supplier.id)) || supplier)
+}
+
+async function fetchSuppliersDetailsBatch(ids) {
+  const uniqueIds = Array.from(new Set(ids.map((id) => String(id)).filter(Boolean)))
+  const detailsMap = new Map()
+  if (!uniqueIds.length) return detailsMap
+
+  try {
+    const timeoutMs = 8000
+    const timeoutPromise = new Promise((resolve) => {
+      setTimeout(() => resolve({ data: null, error: new Error("timeout") }), timeoutMs)
+    })
+
+    const requestPromise = client.from("suppliers").select("*").in("id", uniqueIds)
+    const { data, error } = await Promise.race([requestPromise, timeoutPromise])
+
+    if (error) {
+      console.warn("Не удалось догрузить полные данные для Excel:", error)
+      return detailsMap
+    }
+
+    if (!Array.isArray(data)) return detailsMap
+    data.forEach((supplier) => {
+      const id = String(supplier?.id || "")
+      if (!id) return
+      detailsMap.set(id, supplier)
+      supplierDetailsCache.set(id, supplier)
+      const listIndex = allSuppliers.findIndex((row) => String(row.id) === id)
+      if (listIndex >= 0) allSuppliers[listIndex] = { ...allSuppliers[listIndex], ...supplier }
+    })
+  } catch (e) {
+    console.warn("Ошибка batch-загрузки для Excel:", e)
+  }
+
+  return detailsMap
 }
 
 async function autofillSupplierByInn() {
